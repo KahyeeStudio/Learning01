@@ -89,7 +89,7 @@ void UScProjectileAbility::SpawnProjectile(const FVector& ProjectileTargetLocati
 	 * 然后必须调用 FinishSpawning(...)（或 UGameplayStatics::FinishSpawningActor）来完成生成：
 	 * 这一步才会触发 Construction / 组件初始化，并在后续正常进入 BeginPlay。
 	 */
-
+	
 	// 构造对象池生成信息结构体。
 	FPoolSpawnInfo SpawnInfo;
 	SpawnInfo.Transform = SpawnTransform;
@@ -102,6 +102,7 @@ void UScProjectileAbility::SpawnProjectile(const FVector& ProjectileTargetLocati
 	// 获取对象池子系统并检查有效性。
 	if (UPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<UPoolSubsystem>())
 	{
+		
 		// 从对象池中取出组件并获取取出的Actor。
 		PoolSubsystem->AcquireFromPool(ProjectileClass, SpawnInfo, SpawnOptions);
 		

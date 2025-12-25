@@ -137,5 +137,5 @@ private:
 
 	void ApplyDeactivateStateToActor(); // 统一把 Actor 变成“池内休眠态”
 
-	void ApplyActivateStateToActor(const FTransform& InTransform, const FPoolSpawnOptions& InOptions); // 统一把 Actor 变成“池外活跃态”
+	void ApplyActivateStateToActor(const FPoolSpawnInfo& InSpawnInfo, const FPoolSpawnOptions& InOptions); // 统一把 Actor 变成“池外活跃态”
 };

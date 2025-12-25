@@ -43,6 +43,11 @@ AScProjectileActor::AScProjectileActor()
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovement");
 	// 关闭自动激活，从对象池中取出时再手动激活。
 	ProjectileMovement->bAutoActivate = false;
+	/* 
+	 * 告诉 ProjectileMovement 用哪个组件来移动/扫掠，有些情况下（尤其是池化反复 Deactivate/Activate），
+	 * UpdatedComponent 为空会导致“看起来激活了但完全不动”。这行属于“强保险”。
+	 */
+	ProjectileMovement->SetUpdatedComponent(SphereCollision);	
 	// 投射物移动组件的初始速度。
 	ProjectileMovement->InitialSpeed = 550.0f;
 	// 投射物移动组件的最大速度。

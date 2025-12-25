@@ -9,7 +9,6 @@
 #include "Particles/ParticleSystemComponent.h" // UParticleSystemComponent（停粒子）
 #include "NiagaraComponent.h" // UNiagaraComponent
 #include "Components/AudioComponent.h" // UAudioComponent（停音频）
-#include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Managers/PoolSubsystem.h"
 
@@ -67,7 +66,7 @@ void UPoolableComponent::ActivatePoolActor(const FPoolSpawnInfo& InSpawnInfo, co
 
 	ClearAutoReturnTimer(); // 取出时先清理旧的自动回收定时器
 
-	ApplyActivateStateToActor(InSpawnInfo.Transform, InOptions); // 应用“活跃态”到 Actor
+	ApplyActivateStateToActor(InSpawnInfo, InOptions); // 应用“活跃态”到 Actor
 
 	OnAcquireFromPool.Broadcast(); // 广播：取出事件（蓝图可绑定）
 }
@@ -177,23 +176,20 @@ void UPoolableComponent::ApplyDeactivateStateToActor()
     }
 }
 
-void UPoolableComponent::ApplyActivateStateToActor(const FTransform& InTransform, const FPoolSpawnOptions& InOptions)
+void UPoolableComponent::ApplyActivateStateToActor(const FPoolSpawnInfo& InSpawnInfo, const FPoolSpawnOptions& InOptions)
 {
     AActor* OwnerActor = GetOwner(); // 获取 Owner
-    if (!IsValid(OwnerActor)) // 校验
-    {
-        return; // 返回
-    }
-
-    if (InOptions.bSetTransform) // 如果需要设置 Transform
-    {
-        OwnerActor->SetActorTransform(InTransform); // 设置位置/旋转/缩放
-    }
-
-    if (InOptions.bUnhideActor) // 如果需要显示
-    {
-        OwnerActor->SetActorHiddenInGame(false); // 显示 Actor
-    }
+    // 检查有效性
+    if (!IsValid(OwnerActor)) return;
+    // 设置归属者（Owner）与自定义状态（避免串台）
+    OwnerActor->SetOwner(InSpawnInfo.Owner.Get());
+    OwnerActor->SetInstigator(InSpawnInfo.Instigator.Get());
+    // 如果需要设置 Transform，设置位置/旋转/缩放 
+    if (InOptions.bSetTransform)
+    {OwnerActor->SetActorTransform(InSpawnInfo.Transform);}
+    // 如果需要显示，显示 Actor
+    if (InOptions.bUnhideActor)
+    {OwnerActor->SetActorHiddenInGame(false);}
     // 设置 Actor Tick
     OwnerActor->SetActorTickEnabled(InOptions.bEnableActorTick);
     // 设置 Actor 碰撞开关
@@ -212,17 +208,26 @@ void UPoolableComponent::ApplyActivateStateToActor(const FTransform& InTransform
         // 如果是投射物移动组件，则进行如下操作：
         if (UProjectileMovementComponent* ProjectileMoveComp = Cast<UProjectileMovementComponent>(Comp))
         {
-            ProjectileMoveComp->StopMovementImmediately();     // 清掉上一轮残留速度
-            ProjectileMoveComp->Activate(true);                // 激活并重置（true 表示 reset）
+        	// 确保 UpdatedComponent 正确（池化时强烈建议每次都设一次）
+        	if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(OwnerActor->GetRootComponent()))
+        	{ProjectileMoveComp->SetUpdatedComponent(RootPrim);}
+        	// 清理上一轮残留（可留可不留，但留着更稳）
+        	ProjectileMoveComp->StopMovementImmediately();
+        	// 重新给速度（方向来自 InTransform 的旋转）
+        	const FVector ForwardDir = InSpawnInfo.Transform.GetRotation().GetForwardVector(); // 当前朝向的前方单位向量
+        	const float Speed = (ProjectileMoveComp->InitialSpeed > 0.f) ? ProjectileMoveComp->InitialSpeed : 550.f; // 兜底
+        	ProjectileMoveComp->Velocity = ForwardDir * Speed; // 给出速度向量
+        	// 激活并重置
+        	ProjectileMoveComp->Activate(true);
         }
         
-        // 如果是 Primitive
+        // 如果是 Primitive 碰撞体，处理碰撞预设。
         if (UPrimitiveComponent* PrimitiveComp = Cast<UPrimitiveComponent>(Comp))
         {
             PrimitiveComp->SetVisibility(true, true); // 显示组件
             if (InOptions.bEnableCollision) // 如果要求开碰撞
             {
-                PrimitiveComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); // 开启查询与物理（你可按需改）
+                PrimitiveComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly); // 开启查询与物理（可按需改）
             }
             if (InOptions.bResetPhysicsVelocity) // 如果要清速度
             {
@@ -248,6 +253,6 @@ void UPoolableComponent::ApplyActivateStateToActor(const FTransform& InTransform
             {AudioComp->Play();}
         }
     }
-
-    StartAutoReturnTimer(); // 最后启动自动回收（如果设置了 AutoReturnTime）
+	// 最后启动自动回收（如果设置了 AutoReturnTime）
+    StartAutoReturnTimer();
 }
