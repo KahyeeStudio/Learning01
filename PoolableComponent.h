@@ -28,10 +28,13 @@ public:
 	/** Instigator 的弱指针。*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TWeakObjectPtr<APawn> Instigator = nullptr;
-	/** 默认为 AlwaysSpawn。*/
+	/** 池化 Actor 碰撞组件的碰撞开关模式，默认为只参与查询（Query）。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TEnumAsByte<ECollisionEnabled::Type> CompCollisionEnabledType = ECollisionEnabled::QueryOnly;
+	/** 覆盖生成时的碰撞模式，默认为 AlwaysSpawn。*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	ESpawnActorCollisionHandlingMethod CollisionHandlingMethodOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	/** 默认为 MultiplyWithRoot。*/
+	/** 覆盖生成时的变换，默认为 MultiplyWithRoot。*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	ESpawnActorScaleMethod TransformScaleMethodOverride = ESpawnActorScaleMethod::MultiplyWithRoot;	
 };
@@ -40,36 +43,37 @@ public:
 USTRUCT(BlueprintType) 
 struct FPoolSpawnOptions
 {
-	GENERATED_BODY() // UE 反射必须宏
+	GENERATED_BODY()
 
 public:
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否显示 Actor
-	bool bUnhideActor = true; // 默认：取出时显示
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否启用 Actor Tick
-	bool bEnableActorTick = true; // 默认：取出时允许 Tick
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否启用 Actor 碰撞
-	bool bEnableCollision = true; // 默认：取出时开碰撞
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否启用组件 Tick（统一开关）
-	bool bEnableComponentTick = true; // 默认：取出时组件也能 Tick
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否在取出时“清理物理速度”（避免上一次残留）
-	bool bResetPhysicsVelocity = true; // 默认：清速度
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否在取出时“激活粒子/特效组件”
-	bool bActivateFXComponents = true; // 默认：激活
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否在取出时“激活音频组件”
-	bool bActivateAudioComponents = true; // 默认：激活
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) // 是否把 Transform 设置为传入值
-	bool bSetTransform = true; // 默认：设置 Transform
+	/** 是否显示 Actor， 默认：取出时显示。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bUnhideActor = true;
+	/** 是否把 Transform 设置为传入值， 默认：设置 Transform。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bSetTransform = true;
+	/** 是否启用 Actor Tick， 默认：取出时允许 Tick。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bEnableActorTick = true;
+	/** 是否启用 Actor 碰撞， 默认：取出时开碰撞。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bEnableCollision = true;
+	/** 是否启用组件 Tick（统一开关）， 默认：取出时组件也能 Tick。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bEnableComponentTick = true;
+	/** 是否在取出时“清理物理速度”（避免上一次残留）， 默认：清速度。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bResetPhysicsVelocity = true;
+	/** 是否在取出时“激活粒子/特效组件”， 默认：激活。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bActivateFXComponents = true;
+	/** 是否在取出时“激活音频组件”， 默认：激活。*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bActivateAudioComponents = true;	
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FScPoolSimpleEvent); // 蓝图可绑定的简单事件委托
+/** 蓝图可绑定的简单事件委托，用于绑定对象池组件调用激活和休眠函数时的广播。*/
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FScPoolSimpleEvent);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class A1PROJECTSCAVENGER_API UPoolableComponent : public UActorComponent
@@ -78,19 +82,11 @@ class A1PROJECTSCAVENGER_API UPoolableComponent : public UActorComponent
 
 public:
 	
-	UPoolableComponent();
-	
-	/** 蓝图可调用：主动归还（常用于子弹飞完/特效结束）*/
-	UFUNCTION(BlueprintCallable)
-	void ReturnToPool();
+	UPoolableComponent();	
 
 	/** 蓝图可调用：是否处于池内（休眠状态）*/
 	UFUNCTION(BlueprintCallable)
-	bool IsInPool() const {return bInPool;}
-
-	/** 蓝图可调用：设置自动回收时间（<=0 表示不自动回收）*/
-	UFUNCTION(BlueprintCallable)
-	void SetAutoReturnTime(const float InSeconds);
+	bool IsInPool() const {return bInPool;}	
 
 	/** 蓝图可调用：从池里取出时由子系统调用，激活*/
 	UFUNCTION(BlueprintCallable)
@@ -108,14 +104,20 @@ public:
 	 UPROPERTY(BlueprintAssignable)
 	FScPoolSimpleEvent OnReleaseToPool;
 	
-protected:
+	/** 
+	 * 设置自动回收时间（<=0 表示不自动回收），并启动自动回收计时器。
+	 */
+	UFUNCTION(BlueprintCallable)
+	void SetAutoReturnTime(const float InSeconds);
 	
-	virtual void BeginPlay() override;
+	/** 
+	 * 此函数主要作为对象池组件内部自动回收的回调函数使用。
+	 * 归还 Actor 一般使用对象池子系统的 ReleaseToPool 函数。
+	 */
+	UFUNCTION(BlueprintCallable)
+	void ReturnToPool();
 	
 private:
-
-	UPROPERTY() // 反射属性：避免 GC 误清（其实组件跟随 Actor，不强求，但建议规范）
-	TObjectPtr<AActor> CachedOwnerActor; // 缓存 Owner Actor 指针
 
 	/** 
 	 * 用于记录当前是否在池内的变量，默认不在池内（刚生成时通常是活跃状态）。
@@ -131,11 +133,19 @@ private:
 
 	FTimerHandle AutoReturnTimerHandle; // 定时器句柄（用于到点自动 ReturnToPool）
 
-	void ClearAutoReturnTimer(); // 清理自动回收定时器
-
-	void StartAutoReturnTimer(); // 启动自动回收定时器
-
-	void ApplyDeactivateStateToActor(); // 统一把 Actor 变成“池内休眠态”
-
-	void ApplyActivateStateToActor(const FPoolSpawnInfo& InSpawnInfo, const FPoolSpawnOptions& InOptions); // 统一把 Actor 变成“池外活跃态”
+	/** 启动自动回收定时器*/
+	void StartAutoReturnTimer();
+	/* 清理自动回收定时器*/
+	void ClearAutoReturnTimer();
+	
+	/** 
+	 * 通过对象池组件激活 Actor 的具体实现。
+	 * 统一把 Actor 变成“池外活跃态”。
+	 */
+	void ApplyActivateStateToActor(const FPoolSpawnInfo& InSpawnInfo, const FPoolSpawnOptions& InOptions);
+	/** 
+	 * 通过对象池组件休眠 Actor 的具体实现。
+	 * 统一把 Actor 变成“池内休眠态”。
+	 */
+	void ApplyDeactivateStateToActor();	
 };

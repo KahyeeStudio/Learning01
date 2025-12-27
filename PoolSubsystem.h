@@ -39,20 +39,30 @@ public:
 	UFUNCTION(BlueprintCallable) 
 	void Prewarm(TSubclassOf<AActor> ActorClass, int32 Count);
 	
-	/** 蓝图可调用：从池获取或取出 Actor（没有就生成）*/
+	/** 
+	 * 从对象池获取或取出 Actor（没有就生成），然后调用对象池组件中的激活函数。
+	 */
 	UFUNCTION(BlueprintCallable) 
-	AActor* AcquireFromPool(TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo, const FPoolSpawnOptions& Options);
+	AActor* AcquireFromPool(const TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo, const FPoolSpawnOptions& Options);
 
-	/** 蓝图可调用：归还 Actor 到池*/
+	/** 
+	 * 先调用对象池组件中的休眠函数，然后归还 Actor 到对象池。
+	 */
 	UFUNCTION(BlueprintCallable)
 	void ReleaseToPool(AActor* Actor);
 	
 private:
 
-	UPROPERTY() // 按 Class 分类的池
-	TMap<TObjectPtr<UClass>, FScActorPool> Pools; // Key：类；Value：该类的池
+	/** 
+	 * 按 Class 分类的池
+	 * Key：类；Value：该类的池
+	 */
+	UPROPERTY() 
+	TMap<TObjectPtr<UClass>, FScActorPool> Pools; 
 
-	AActor* SpawnNewActor(TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo); // 生成新 Actor（内部用）
+	// 生成新 Actor（内部用）
+	AActor* SpawnNewActor(const TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo);
 
-	UPoolableComponent* FindPoolableComponent(AActor* Actor) const; // 找 Actor 上的 Poolable 组件
+	// 找 Actor 上的 Poolable 组件
+	UPoolableComponent* FindPoolableComponent(AActor* Actor) const;
 };

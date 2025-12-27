@@ -10,26 +10,26 @@
 
 void UPoolSubsystem::Deinitialize()
 {
-    Super::Deinitialize(); // 调父类
-
-    for (TPair<TObjectPtr<UClass>, FScActorPool>& Pair : Pools) // 遍历所有池
+    Super::Deinitialize();
+    // 遍历所有池
+    for (TPair<TObjectPtr<UClass>, FScActorPool>& Pair : Pools)
     {
-        FScActorPool& Pool = Pair.Value; // 拿到池数据
-
-        for (TWeakObjectPtr<AActor>& WeakActor : Pool.InactiveActors) // 遍历闲置 Actor
+        // 获取池数据
+        FScActorPool& Pool = Pair.Value;
+        // 遍历闲置 Actor
+        for (TWeakObjectPtr<AActor>& WeakActor : Pool.InactiveActors)
         {
-            AActor* Actor = WeakActor.Get(); // 尝试取出指针
-            if (IsValid(Actor)) // 如果还有效
-            {
-                Actor->Destroy(); // 世界销毁时直接 Destroy（安全）
-            }
+            // 尝试取出池内闲置的 Actor 的指针，如果还有效，则在世界销毁时直接 Destroy（安全）
+            if (AActor* Actor = WeakActor.Get(); IsValid(Actor))
+            {Actor->Destroy();}
         }
-
-        Pool.InactiveActors.Empty(); // 清空数组
-        Pool.TotalCreated = 0; // 清统计
+        // 清空数组        
+        Pool.InactiveActors.Empty();
+        // 清统计
+        Pool.TotalCreated = 0;
     }
-
-    Pools.Empty(); // 清空 Map
+    // 清空 Map
+    Pools.Empty();
 }
 
 void UPoolSubsystem::Prewarm(TSubclassOf<AActor> ActorClass, int32 Count)
@@ -50,14 +50,13 @@ void UPoolSubsystem::Prewarm(TSubclassOf<AActor> ActorClass, int32 Count)
         FPoolSpawnInfo SpawnInfo;
         // 先 Acquire（会 Spawn）
         AActor* Actor = AcquireFromPool(ActorClass, SpawnInfo, Options);
-        if (IsValid(Actor)) // 如果成功
-        {
-            ReleaseToPool(Actor); // 再立刻归还到池
-        }
+        // 如果成功，先立刻归还到池。
+        if (IsValid(Actor))
+        {ReleaseToPool(Actor);}
     }
 }
 
-AActor* UPoolSubsystem::AcquireFromPool(TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo, const FPoolSpawnOptions& Options)
+AActor* UPoolSubsystem::AcquireFromPool(const TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo, const FPoolSpawnOptions& Options)
 {
     // 如果类无效，返回空
     if (!ActorClass) return nullptr;
@@ -78,6 +77,9 @@ AActor* UPoolSubsystem::AcquireFromPool(TSubclassOf<AActor> ActorClass, const FP
         if (!IsValid(Actor)) continue;    
         // 找池化组件
         UPoolableComponent* Poolable = FindPoolableComponent(Actor);
+        
+        // TODO: 把取出和激活拆开，避免预热时自动激活。
+        
         // 如果有池化组件
         if (Poolable) 
         {
@@ -93,8 +95,8 @@ AActor* UPoolSubsystem::AcquireFromPool(TSubclassOf<AActor> ActorClass, const FP
             Actor->SetActorTickEnabled(Options.bEnableActorTick); // Tick
             Actor->SetActorEnableCollision(Options.bEnableCollision); // 碰撞
         }
-
-        return Actor; // 返回这个复用出来的 Actor
+        // 返回从池中复用出来的 Actor，可以直接被引用。
+        return Actor; 
     }
     // 没有可复用就新建
     AActor* NewActor = SpawnNewActor(ActorClass, SpawnInfo); 
@@ -131,6 +133,9 @@ void UPoolSubsystem::ReleaseToPool(AActor* Actor)
     FScActorPool& Pool = Pools.FindOrAdd(ClassKey);
     // 找池化组件
     UPoolableComponent* Poolable = FindPoolableComponent(Actor);
+    
+    // TODO: 把归还和休眠拆开。
+    
     // 如果有组件，让 Actor 进入休眠态（隐藏/关碰撞/停特效等）
     if (Poolable)
     {Poolable->DeactivatePoolActor();}
@@ -145,13 +150,11 @@ void UPoolSubsystem::ReleaseToPool(AActor* Actor)
     Pool.InactiveActors.Add(Actor);
 }
 
-AActor* UPoolSubsystem::SpawnNewActor(TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo)
+AActor* UPoolSubsystem::SpawnNewActor(const TSubclassOf<AActor> ActorClass, const FPoolSpawnInfo& SpawnInfo)
 {
-    UWorld* World = GetWorld(); // 获取世界
-    if (!World) // 世界无效
-    {
-        return nullptr; // 返回空
-    }
+    // 获取世界
+    UWorld* World = GetWorld();
+    if (!World) return nullptr;
     // 构造一个生成参数
     FActorSpawnParameters Params;
     // 填入结构体中的信息
@@ -160,17 +163,15 @@ AActor* UPoolSubsystem::SpawnNewActor(TSubclassOf<AActor> ActorClass, const FPoo
     Params.SpawnCollisionHandlingOverride = SpawnInfo.CollisionHandlingMethodOverride;// 默认强制生成（池化一般不考虑生成失败）
     Params.TransformScaleMethod = SpawnInfo.TransformScaleMethodOverride;
     Params.bDeferConstruction = false; // 不延迟构造（新手先别搞 deferred）
-
-    AActor* NewActor = World->SpawnActor<AActor>(ActorClass, SpawnInfo.Transform, Params); // 生成 Actor
-    return NewActor; // 返回
+    // 生成 Actor
+    AActor* NewActor = World->SpawnActor<AActor>(ActorClass, SpawnInfo.Transform, Params);
+    return NewActor;
 }
 
 UPoolableComponent* UPoolSubsystem::FindPoolableComponent(AActor* Actor) const
 {
-    if (!IsValid(Actor)) // 判空
-    {
-        return nullptr; // 返回空
-    }
-
-    return Actor->FindComponentByClass<UPoolableComponent>(); // 查找并返回组件
+    // 找不到对象池组件则返回空指针。
+    if (!IsValid(Actor)) return nullptr;
+    // 查找并返回组件。
+    return Actor->FindComponentByClass<UPoolableComponent>();
 }
